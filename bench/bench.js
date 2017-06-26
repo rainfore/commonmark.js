@@ -1,46 +1,54 @@
-"use strict";
+const fs = require('fs');
+const Benchmark = require('benchmark').Benchmark;
+const suite = new Benchmark.Suite();
 
-var Benchmark = require('benchmark').Benchmark;
-var suite = new Benchmark.Suite();
-var fs = require('fs');
-var commonmark = require('../lib/index.js');
-// npm install showdown
-var Showdown = require('showdown');
-// npm install marked
-var marked = require('marked');
-// npm install markdown-it
-var markdownit = require('markdown-it')('commonmark');
-// disable expensive IDNa links encoding:
-var markdownit_encode = markdownit.utils.lib.mdurl.encode;
-markdownit.normalizeLink = function(url) { return markdownit_encode(url); };
-markdownit.normalizeLinkText = function(str) { return str; };
+const parsers = {
+    'markdown-it': (() => {
+        const markdownit = require('markdown-it')('commonmark');
+        return (source) => markdownit.render(source);
+    })(),
+    remarkable: (() => {
+        const Remarkable = require('remarkable');
+        const md = new Remarkable('commonmark');
+        return (source) => md.render(source);
+    })(),
+    marked: (() => {
+        const marked = require('marked');
+        return (source) => marked(source);
+    })(),
+    showdown: (() => {
+        const showdown = require('showdown');
+        const converter = new showdown.Converter();
+        return (source) => converter.makeHtml(source);
+    })(),
+    commonmark: (() => {
+        const commonmark = require('../lib/index.js');
+        const reader = new commonmark.Parser();
+        const writer = new commonmark.HtmlRenderer();
+        return (source) => writer.render(reader.parse(source));
+    })(),
+    'markdown-js': (() => {
+        const markdown = require('markdown').markdown;
+        return (source) => markdown.toHTML(source);
+    })(),
+    // micromarkdown: (() => {
+    //     const mmd = require('micromarkdown');
+    //     return (source) => mmd.parse(source);
+    // })(),
+    'nano-markdown': (() => {
+        const nmd = require('nano-markdown');
+        return (source) => nmd(source);
+    })(),
+};
 
-var showdown = new Showdown.Converter();
-var parser = new commonmark.Parser();
-var parserSmart = new commonmark.Parser({smart: true});
-var renderer = new commonmark.HtmlRenderer();
+const benchfile = process.argv[2];
 
-var benchfile = process.argv[2];
+const contents = fs.readFileSync(benchfile, 'utf8');
 
-var contents = fs.readFileSync(benchfile, 'utf8');
+for (const key in parsers) {
+    suite.add(key, () => {
+        parsers[key](contents);
+    });
+}
 
-suite.add('commonmark.js', function() {
-  renderer.render(parser.parse(contents));
-})
-
-.add('showdown.js', function() {
-  showdown.makeHtml(contents);
-})
-
-.add('marked.js', function() {
-  marked(contents);
-})
-
-.add('markdown-it', function() {
-  markdownit.render(contents);
-})
-
-.on('cycle', function(event) {
-  console.log(String(event.target));
-})
-.run();
+suite.on('cycle', (event) => console.log(String(event.target))).run();
